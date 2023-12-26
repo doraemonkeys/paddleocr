@@ -146,7 +146,11 @@ func NewPpocr(exePath string, args OcrArgs) (*Ppocr, error) {
 // 加锁调用，发生错误需要close
 func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
 	p.cmd = exec.Command(".\\"+filepath.Base(exePath), strings.Fields(args.CmdString())...)
-	p.cmd.Dir = filepath.Dir(exePath)
+	cmdDir := filepath.Dir(exePath)
+	if cmdDir == "." {
+		cmdDir = ""
+	}
+	p.cmd.Dir = cmdDir
 	wc, err := p.cmd.StdinPipe()
 	if err != nil {
 		return err
