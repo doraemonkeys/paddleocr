@@ -19,6 +19,8 @@ type OcrArgs struct {
 	// 启用CPU推理加速，关掉可以减少内存占用，但会降低速度。默认为true。
 	EnableMkldnn *bool `paddleocr:"enable_mkldnn"`
 	// 若图片长边长度大于该值，会被缩小到该值，以提高速度。默认为960。
+	// 如果对大图/长图的识别率低，可增大 limit_side_len 的值。
+	// 建议为 32 & 48 的公倍数，如 960, 2880, 4320
 	LimitSideLen *int32 `paddleocr:"limit_side_len"`
 	// 启用方向分类，必须与cls值相同。 默认为false。
 	UseAngleCls *bool `paddleocr:"use_angle_cls"`
