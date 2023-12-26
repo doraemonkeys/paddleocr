@@ -42,7 +42,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(result)
+	if result.Code != paddleocr.CodeSuccess {
+		fmt.Println("orc failed:", result.Msg)
+		return
+	}
+	fmt.Println(result.Data)
 }
 ```
    

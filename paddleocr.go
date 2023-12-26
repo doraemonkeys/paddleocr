@@ -42,6 +42,7 @@ const (
 	ConfigJapan      = "models/config_japan.txt"
 	ConfigKorean     = "models/config_korean.txt"
 )
+
 const clipboardImagePath = `clipboard`
 
 func (o OcrArgs) CmdString() string {
@@ -92,12 +93,12 @@ func OcrFile(exePath, imagePath string, argsCnf OcrArgs) ([]byte, error) {
 	return b, nil
 }
 
-func OcrFileAndParse(exePath, imagePath string, argsCnf OcrArgs) ([]Result, error) {
-	rawRet, err := OcrFile(exePath, imagePath, argsCnf)
+func OcrFileAndParse(exePath, imagePath string, argsCnf OcrArgs) (Result, error) {
+	data, err := OcrFile(exePath, imagePath, argsCnf)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
-	return ParseResult(rawRet)
+	return ParseResult(data)
 }
 
 type Ppocr struct {
@@ -325,70 +326,90 @@ func (p *Ppocr) Ocr(image []byte) ([]byte, error) {
 	return p.ocr(dataJson)
 }
 
-type Result struct {
+type Data struct {
 	Rect  [][]int `json:"box"`
 	Score float32 `json:"score"`
 	Text  string  `json:"text"`
 }
 
+type Result struct {
+	Code int
+	Msg  string
+	Data []Data
+}
+
+const (
+	// CodeSuccess indicates that the OCR process was successful.
+	CodeSuccess = 100
+	// CodeNoText indicates that no text was recognized.
+	CodeNoText = 101
+)
+
 // ParseResult parses the raw OCR result bytes into a slice of Result structs.
 // It returns the parsed results and any error encountered during parsing.
-func ParseResult(result []byte) ([]Result, error) {
+func ParseResult(rawData []byte) (Result, error) {
 	var resp map[string]any
-	err := json.Unmarshal(result, &resp)
+	err := json.Unmarshal(rawData, &resp)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
+	var result = Result{}
+	var resData = make([]Data, 0)
 	if resp["code"] == nil {
-		return nil, fmt.Errorf("no code in response")
+		return Result{}, fmt.Errorf("no code in response")
 	}
 	if resp["code"].(float64) != 100 {
-		return nil, fmt.Errorf("code %v in response，msg: %v", resp["code"], resp["data"])
+		result.Code = int(resp["code"].(float64))
+		result.Msg = fmt.Sprintf("%v", resp["data"])
+		return result, nil
 	}
 	if resp["data"] == nil {
-		return nil, fmt.Errorf("no data in response")
+		return Result{}, fmt.Errorf("no data in response")
 	}
 	dataSlice, ok := resp["data"].(any)
 	if !ok {
-		return nil, fmt.Errorf("data is not array")
+		return result, fmt.Errorf("data is not array")
 	}
+	result.Code = CodeSuccess
+	result.Msg = "parse success"
+
 	var data []any
 	data, ok = dataSlice.([]any)
 	if !ok {
-		return nil, fmt.Errorf("data is not array")
+		return result, fmt.Errorf("data is not array")
 	}
-	var res []Result
 	for _, v := range data {
 		str, err := json.Marshal(v)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
-		var r Result
+		var r Data
 		err = json.Unmarshal(str, &r)
 		if err != nil {
-			return nil, err
+			return result, err
 		}
-		res = append(res, r)
+		resData = append(resData, r)
 	}
-	return res, nil
+	result.Data = resData
+	return result, nil
 }
 
 // OcrFileAndParse processes the OCR for a given image file path and parses the result.
 // It returns the parsed OCR results as a slice of Result structs and any error encountered.
-func (p *Ppocr) OcrFileAndParse(imagePath string) ([]Result, error) {
+func (p *Ppocr) OcrFileAndParse(imagePath string) (Result, error) {
 	b, err := p.OcrFile(imagePath)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	return ParseResult(b)
 }
 
 // OcrAndParse processes and parses the OCR for a given image represented as a byte slice.
 // It returns the parsed OCR results as a slice of Result structs and any error encountered.
-func (p *Ppocr) OcrAndParse(image []byte) ([]Result, error) {
+func (p *Ppocr) OcrAndParse(image []byte) (Result, error) {
 	b, err := p.Ocr(image)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 	return ParseResult(b)
 }
@@ -401,6 +422,6 @@ func (p *Ppocr) OcrClipboard() ([]byte, error) {
 
 // OcrClipboardAndParse processes the OCR for an image stored in the clipboard and parses the result.
 // It returns the parsed OCR results as a slice of Result structs and any error encountered.
-func (p *Ppocr) OcrClipboardAndParse() ([]Result, error) {
+func (p *Ppocr) OcrClipboardAndParse() (Result, error) {
 	return p.OcrFileAndParse(clipboardImagePath)
 }
