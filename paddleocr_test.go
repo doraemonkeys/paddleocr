@@ -53,15 +53,23 @@ func TestNewPpocr(t *testing.T) {
 	}{
 		{"1", args{"",
 			OcrArgs{}}, true},
-		{"2", args{`D:\用户\computer\Downloads\PaddleOCR-json_v.1.3.1\PaddleOCR-json_v.1.3.1\PaddleOCR-json.exe`,
+		{"2", args{`E:\Doraemon\IT\mytools\PaddleOCR-json\PaddleOCR-json.exe`,
 			OcrArgs{}}, false},
+		{"3", args{`.\PaddleOCR-json_v.1.3.1\PaddleOCR-json.exe`,
+			OcrArgs{}}, false},
+		{"3", args{`PaddleOCR-json_v.1.3.1\PaddleOCR-json.exe`,
+			OcrArgs{}}, false},
+		{"4", args{`.\PaddleOCR-json.exe`,
+			OcrArgs{}}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewPpocr(tt.args.exePath, tt.args.args)
+			p, err := NewPpocr(tt.args.exePath, tt.args.args)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewPpocr() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			}
+			if err == nil {
+				p.Close()
 			}
 		})
 	}

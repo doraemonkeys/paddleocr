@@ -99,15 +99,18 @@ func OcrFileAndParse(exePath, imagePath string, argsCnf OcrArgs) ([]Result, erro
 }
 
 type Ppocr struct {
-	exePath     string
-	args        OcrArgs
-	ppLock      *sync.Mutex
-	exitChan    chan struct{}
-	internalErr error
+	exePath         string
+	args            OcrArgs
+	ppLock          *sync.Mutex
+	restartExitChan chan struct{}
+	internalErr     error
 
 	cmdOut io.ReadCloser
 	cmdIn  io.WriteCloser
 	cmd    *exec.Cmd
+	// 无缓冲同步信号通道，close()中接收，Run()中发送。
+	// Run()退出必须有对应close方法的调用
+	runGoroutineExitedChan chan struct{}
 	// startTime time.Time
 }
 
@@ -115,15 +118,18 @@ type Ppocr struct {
 // and OCR arguments.
 // It initializes the OCR process and returns a pointer to the Ppocr instance
 // and any error encountered.
+//
+// It is the caller's responsibility to close the Ppocr instance when finished.
 func NewPpocr(exePath string, args OcrArgs) (*Ppocr, error) {
 	if !fileIsExist(exePath) {
 		return nil, fmt.Errorf("executable file %s not found", exePath)
 	}
 	p := &Ppocr{
-		exePath:  exePath,
-		args:     args,
-		ppLock:   new(sync.Mutex),
-		exitChan: make(chan struct{}),
+		exePath:                exePath,
+		args:                   args,
+		ppLock:                 new(sync.Mutex),
+		restartExitChan:        make(chan struct{}),
+		runGoroutineExitedChan: make(chan struct{}),
 	}
 
 	p.ppLock.Lock()
@@ -131,13 +137,15 @@ func NewPpocr(exePath string, args OcrArgs) (*Ppocr, error) {
 	err := p.initPpocr(exePath, args)
 	if err == nil {
 		go p.restartTimer()
+	} else {
+		p.close()
 	}
 	return p, err
 }
 
-// 加锁调用
+// 加锁调用，发生错误需要close
 func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
-	p.cmd = exec.Command(exePath, strings.Fields(args.CmdString())...)
+	p.cmd = exec.Command(".\\"+filepath.Base(exePath), strings.Fields(args.CmdString())...)
 	p.cmd.Dir = filepath.Dir(exePath)
 	wc, err := p.cmd.StdinPipe()
 	if err != nil {
@@ -149,18 +157,25 @@ func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
 		return err
 	}
 	p.cmdOut = rc
-	err = p.cmd.Start()
-	if err != nil {
-		return err
-	}
+	go func() {
+		p.internalErr = nil
+		err = p.cmd.Run()
+		// fmt.Println("Run() OCR process exited")
+		if err != nil {
+			p.internalErr = err
+		}
+		p.runGoroutineExitedChan <- struct{}{}
+	}()
 	// OCR init completed.
 	buf := make([]byte, 4096)
 	start := 0
 	for {
 		n, err := rc.Read(buf[start:])
 		if err != nil {
-			p.Close()
-			return err
+			if p.internalErr != nil {
+				return fmt.Errorf("OCR init failed: %v,run error: %v", err, p.internalErr)
+			}
+			return fmt.Errorf("OCR init failed: %v", err)
 		}
 		start += n
 		if start >= len(buf) {
@@ -170,39 +185,70 @@ func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
 			break
 		}
 	}
-	return nil
+	return p.internalErr
 }
 
 // Close cleanly shuts down the OCR process associated with the Ppocr instance.
 // It releases any resources and terminates the OCR process.
+//
+// Warning: This method should only be called once.
 func (p *Ppocr) Close() error {
 	p.ppLock.Lock()
 	defer p.ppLock.Unlock()
-	close(p.exitChan)
+	// close(p.restartExitChan) // 只能关闭一次
+	select {
+	case <-p.restartExitChan:
+		return fmt.Errorf("OCR process has been closed")
+	default:
+		close(p.restartExitChan)
+	}
+	p.internalErr = fmt.Errorf("OCR process has been closed")
 	return p.close()
 }
 
-func (p *Ppocr) close() error {
+func (p *Ppocr) close() (err error) {
+	select {
+	case <-p.runGoroutineExitedChan:
+		return nil
+	default:
+	}
+	defer func() {
+		// 可能的情况：Run刚退出，p.exited还没设置为true
+		if r := recover(); r != nil {
+			err = fmt.Errorf("close panic: %v", r)
+		}
+		// fmt.Println("wait OCR runGoroutineExitedChan")
+		<-p.runGoroutineExitedChan
+		// fmt.Println("wait OCR runGoroutineExitedChan done")
+	}()
+	if p.cmd == nil {
+		return nil
+	}
 	if p.cmd.ProcessState != nil && p.cmd.ProcessState.Exited() {
 		return nil
 	}
 	if err := p.cmd.Process.Kill(); err != nil {
 		return err
 	}
+	// fmt.Println("kill OCR process success")
 	return nil
 }
 
 // 定时重启进程减少内存占用(ocr程序有内存泄漏)
 func (p *Ppocr) restartTimer() {
+	// ticker := time.NewTicker(10 * time.Second)
 	ticker := time.NewTicker(20 * time.Minute)
 	for {
 		select {
 		case <-ticker.C:
+			// fmt.Println("restart OCR process")
 			p.ppLock.Lock()
 			_ = p.close()
 			p.internalErr = p.initPpocr(p.exePath, p.args)
 			p.ppLock.Unlock()
-		case <-p.exitChan:
+			// fmt.Println("restart OCR process done")
+		case <-p.restartExitChan:
+			// fmt.Println("exit OCR process")
 			return
 		}
 	}
@@ -216,9 +262,6 @@ type imageData struct {
 // OcrFile sends an image file path to the OCR process and retrieves the OCR result.
 // It returns the OCR result as bytes and any error encountered.
 func (p *Ppocr) OcrFile(imagePath string) ([]byte, error) {
-	if p.internalErr != nil {
-		return nil, p.internalErr
-	}
 	var data = imageData{Path: imagePath}
 	dataJson, err := json.Marshal(data)
 	if err != nil {
@@ -226,6 +269,9 @@ func (p *Ppocr) OcrFile(imagePath string) ([]byte, error) {
 	}
 	p.ppLock.Lock()
 	defer p.ppLock.Unlock()
+	if p.internalErr != nil {
+		return nil, p.internalErr
+	}
 	return p.ocr(dataJson)
 }
 
