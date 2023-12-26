@@ -1,5 +1,4 @@
-English|[中文](/README-ZH.md)  
-
+中文|[English](README.md) 
 
 
 # paddleocr
@@ -7,21 +6,20 @@ English|[中文](/README-ZH.md)
 [![Go Reference](https://pkg.go.dev/badge/github.com/doraemonkeys/paddleocr.svg)](https://pkg.go.dev/github.com/doraemonkeys/paddleocr)
 
 
-A simple wrapper for hiroi-sora/PaddleOCR-json implemented in Go language.
 
+Go语言实现的对PaddleOCR-json的简单封装。
 
-## Installation
+## 安装
 
-1. Download the program from [PaddleOCR-json releases](https://github.com/hiroi-sora/PaddleOCR-json/releases) and decompress it.
-
-2. install paddleocr
+1. 从[PaddleOCR-json releases](https://github.com/hiroi-sora/PaddleOCR-json/releases)下载程序并解压。
+2. 安装paddleocr
 
    ```go
    go get github.com/doraemonkeys/paddleocr
    ```
 
-## Quick Start
-
+## 快速开始
+    
 ```go
 package main
 
@@ -45,5 +43,3 @@ func main() {
 	fmt.Println(result)
 }
 ```
-   
-
