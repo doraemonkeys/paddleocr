@@ -4,7 +4,7 @@ English|[中文](/README-ZH.md)
 
 # paddleocr
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/doraemonkeys/paddleocr.svg)](https://pkg.go.dev/github.com/doraemonkeys/paddleocr)
+[![Go Reference](https://pkg.go.dev/badge/github.com/doraemonkeys/paddleocr.svg)](https://pkg.go.dev/github.com/doraemonkeys/paddleocr) [![Go Report Card](https://goreportcard.com/badge/github.com/doraemonkeys/paddleocr)](https://goreportcard.com/report/github.com/doraemonkeys/paddleocr)
 
 
 A simple wrapper for hiroi-sora/PaddleOCR-json implemented in Go language.
@@ -49,5 +49,4 @@ func main() {
 	fmt.Println(result.Data)
 }
 ```
-   
 
