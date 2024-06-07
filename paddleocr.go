@@ -27,6 +27,9 @@ type OcrArgs struct {
 	// 指定不同语言的配置文件路径，识别多国语言。
 	// models 目录中，每一个 config_xxx.txt 是一组语言配置文件（如英文是congfig_en.txt）。
 	// 只需将这个文件的路径传入 config_path 参数，即可切换为对应的语言。
+	//
+	// 例如：
+	//   paddleocr.OcrArgs{ ConfigPath: paddleocr.ConfigChinese }
 	ConfigPath string `paddleocr:"config_path"`
 }
 
@@ -59,9 +62,9 @@ func (o OcrArgs) CmdString() string {
 		// value := v.Field(i).Elem().Interface()
 		value := v.Field(i).Interface()
 
-		switch value.(type) {
+		switch valueType := value.(type) {
 		case *bool:
-			if *value.(*bool) {
+			if *valueType {
 				s += fmt.Sprintf("%s=1 ", f.Tag.Get(paddleocrTag))
 			} else {
 				s += fmt.Sprintf("%s=0 ", f.Tag.Get(paddleocrTag))
@@ -366,7 +369,7 @@ func ParseResult(rawData []byte) (Result, error) {
 	if resp["data"] == nil {
 		return Result{}, fmt.Errorf("no data in response")
 	}
-	dataSlice, ok := resp["data"].(any)
+	dataSlice, ok := resp["data"]
 	if !ok {
 		return result, fmt.Errorf("data is not array")
 	}

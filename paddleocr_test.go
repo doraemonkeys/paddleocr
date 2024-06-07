@@ -53,7 +53,7 @@ func TestNewPpocr(t *testing.T) {
 	}{
 		{"1", args{"",
 			OcrArgs{}}, true},
-		{"2", args{`E:\Doraemon\IT\mytools\PaddleOCR-json\PaddleOCR-json.exe`,
+		{"2", args{`E:\path\to\PaddleOCR-json.exe`,
 			OcrArgs{}}, false},
 		{"3", args{`.\PaddleOCR-json_v.1.3.1\PaddleOCR-json.exe`,
 			OcrArgs{}}, false},
