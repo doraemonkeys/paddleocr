@@ -35,8 +35,6 @@ type OcrArgs struct {
 	ConfigPath string `paddleocr:"config_path"`
 }
 
-const paddleocrTag = "paddleocr"
-
 const (
 	ConfigChinese    = "models/config_chinese.txt"
 	ConfigChineseCht = "models/config_chinese_cht.txt"
@@ -437,12 +435,18 @@ func (p *Ppocr) OcrAndParse(image []byte) (Result, error) {
 	return ParseResult(b)
 }
 
+const paddleocrTag = "paddleocr"
+
+// Deprecated: Only PaddleOCR-json v1.3.1 is supported.
+//
 // OcrClipboard processes the OCR for an image stored in the clipboard.
 // It returns the raw OCR result as bytes and any error encountered.
 func (p *Ppocr) OcrClipboard() ([]byte, error) {
 	return p.OcrFile(clipboardImagePath)
 }
 
+// Deprecated: Only PaddleOCR-json v1.3.1 is supported.
+//
 // OcrClipboardAndParse processes the OCR for an image stored in the clipboard and parses the result.
 // It returns the parsed OCR results as a slice of Result structs and any error encountered.
 func (p *Ppocr) OcrClipboardAndParse() (Result, error) {
