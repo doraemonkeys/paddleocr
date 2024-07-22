@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -111,9 +113,9 @@ type Ppocr struct {
 	restartExitChan chan struct{}
 	internalErr     error
 
-	cmdOut io.ReadCloser
-	cmdIn  io.WriteCloser
-	cmd    *exec.Cmd
+	cmdStdout io.ReadCloser
+	cmdStdin  io.WriteCloser
+	cmd       *exec.Cmd
 	// 无缓冲同步信号通道，close()中接收，Run()中发送。
 	// Run()退出必须有对应close方法的调用
 	runGoroutineExitedChan chan struct{}
@@ -151,7 +153,13 @@ func NewPpocr(exePath string, args OcrArgs) (*Ppocr, error) {
 
 // 加锁调用，发生错误需要close
 func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
-	p.cmd = exec.Command(".\\"+filepath.Base(exePath), strings.Fields(args.CmdString())...)
+	var cmdSlash string
+	if runtime.GOOS == "windows" {
+		cmdSlash = "\\"
+	} else {
+		cmdSlash = "/"
+	}
+	p.cmd = exec.Command("."+cmdSlash+filepath.Base(exePath), strings.Fields(args.CmdString())...)
 	cmdDir := filepath.Dir(exePath)
 	if cmdDir == "." {
 		cmdDir = ""
@@ -161,22 +169,31 @@ func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
 	if err != nil {
 		return err
 	}
-	p.cmdIn = wc
 	rc, err := p.cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
-	p.cmdOut = rc
+	p.cmdStdin = wc
+	p.cmdStdout = rc
+
+	var stderrBuffer bytes.Buffer
+	p.cmd.Stderr = &stderrBuffer
+
+	err = p.cmd.Start()
+	if err != nil {
+		return fmt.Errorf("OCR process start failed: %v", err)
+	}
+
 	go func() {
 		p.internalErr = nil
-		err = p.cmd.Run()
-		// fmt.Println("Run() OCR process exited")
+		err := p.cmd.Wait()
+		// fmt.Println("Run() OCR process exited, error:", err)
 		if err != nil {
 			p.internalErr = err
 		}
 		p.runGoroutineExitedChan <- struct{}{}
 	}()
-	// OCR init completed.
+
 	buf := make([]byte, 4096)
 	start := 0
 	for {
@@ -185,7 +202,7 @@ func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
 			if p.internalErr != nil {
 				return fmt.Errorf("OCR init failed: %v,run error: %v", err, p.internalErr)
 			}
-			return fmt.Errorf("OCR init failed: %v", err)
+			return fmt.Errorf("OCR init failed, error: %v, output: %s %s", err, buf[:start], stderrBuffer.String())
 		}
 		start += n
 		if start >= len(buf) {
@@ -237,6 +254,9 @@ func (p *Ppocr) close() (err error) {
 	if p.cmd.ProcessState != nil && p.cmd.ProcessState.Exited() {
 		return nil
 	}
+	if err := p.cmdStdin.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "close cmdIn error: %v\n", err)
+	}
 	if err := p.cmd.Process.Kill(); err != nil {
 		return err
 	}
@@ -286,18 +306,18 @@ func (p *Ppocr) OcrFile(imagePath string) ([]byte, error) {
 }
 
 func (p *Ppocr) ocr(dataJson []byte) ([]byte, error) {
-	_, err := p.cmdIn.Write(dataJson)
+	_, err := p.cmdStdin.Write(dataJson)
 	if err != nil {
 		return nil, err
 	}
-	_, err = p.cmdIn.Write([]byte("\n"))
+	_, err = p.cmdStdin.Write([]byte("\n"))
 	if err != nil {
 		return nil, err
 	}
 	content := make([]byte, 1024*10)
 	start := 0
 	for {
-		n, err := p.cmdOut.Read(content[start:])
+		n, err := p.cmdStdout.Read(content[start:])
 		if err != nil {
 			return nil, err
 		}
