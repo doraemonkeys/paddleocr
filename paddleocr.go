@@ -16,23 +16,31 @@ import (
 )
 
 type OcrArgs struct {
-	// 启用cls方向分类，识别方向不是正朝上的图片。默认为false。
-	Cls *bool `paddleocr:"--cls"`
-	// 启用CPU推理加速，关掉可以减少内存占用，但会降低速度。默认为true。
-	EnableMkldnn *bool `paddleocr:"--enable_mkldnn"`
-	// 若图片长边长度大于该值，会被缩小到该值，以提高速度。默认为960。
-	// 如果对大图/长图的识别率低，可增大 limit_side_len 的值。
-	// 建议为 32 & 48 的公倍数，如 960, 2880, 4320
-	LimitSideLen *int32 `paddleocr:"--limit_side_len"`
-	// 启用方向分类，必须与cls值相同。 默认为false。
-	UseAngleCls *bool `paddleocr:"--use_angle_cls"`
+	// 启用ascii编码转换，以ascii编码（纯英文数字）输出unicode字符，如 你好→\u4f60\u597d 。
+	//
+	// 程序默认启用。
+	EnsureAscii *bool `paddleocr:"ensure_ascii"`
 	// 指定不同语言的配置文件路径，识别多国语言。
 	// models 目录中，每一个 config_xxx.txt 是一组语言配置文件（如英文是congfig_en.txt）。
 	// 只需将这个文件的路径传入 config_path 参数，即可切换为对应的语言。
 	//
 	// 例如：
 	//   paddleocr.OcrArgs{ ConfigPath: paddleocr.ConfigChinese }
-	ConfigPath string `paddleocr:"--config_path"`
+	ConfigPath string `paddleocr:"config_path"`
+	// 启用det目标识别。如果你的图片中只含一行文本，且没有空白区域，那么可以关闭det以加快速度。
+	//
+	// 程序默认启用。
+	Det *bool `paddleocr:"det"`
+	// 启用cls方向分类，识别方向不是正朝上的图片。默认为false。
+	Cls *bool `paddleocr:"cls"`
+	// 启用方向分类，必须与cls值相同。 默认为false。
+	UseAngleCls *bool `paddleocr:"use_angle_cls"`
+	// 启用CPU推理加速，关掉可以减少内存占用，但会降低速度。默认为true。
+	EnableMkldnn *bool `paddleocr:"enable_mkldnn"`
+	// 若图片长边长度大于该值，会被缩小到该值，以提高速度。默认为960。
+	// 如果对大图/长图的识别率低，可增大 limit_side_len 的值。
+	// 建议为 32 & 48 的公倍数，如 960, 2880, 4320
+	LimitSideLen *int32 `paddleocr:"limit_side_len"`
 }
 
 const (
@@ -65,26 +73,27 @@ func (o OcrArgs) CmdString() string {
 		switch valueType := value.(type) {
 		case *bool:
 			if *valueType {
-				s += fmt.Sprintf("%s=1 ", f.Tag.Get(paddleocrTag))
+				s += fmt.Sprintf("-%s=1 ", f.Tag.Get(paddleocrTag))
 			} else {
-				s += fmt.Sprintf("%s=0 ", f.Tag.Get(paddleocrTag))
+				s += fmt.Sprintf("-%s=0 ", f.Tag.Get(paddleocrTag))
 			}
 		default:
 			if v.Field(i).Kind() == reflect.Ptr {
-				s += fmt.Sprintf("%s=%v ", f.Tag.Get(paddleocrTag), v.Field(i).Elem().Interface())
+				s += fmt.Sprintf("-%s=%v ", f.Tag.Get(paddleocrTag), v.Field(i).Elem().Interface())
 			} else {
-				s += fmt.Sprintf("%s=%v ", f.Tag.Get(paddleocrTag), value)
+				s += fmt.Sprintf("-%s=%v ", f.Tag.Get(paddleocrTag), value)
 			}
 		}
 	}
 	s = strings.TrimSpace(s)
+	// fmt.Println("args", s)
 	return s
 }
 
 // OcrFile processes the OCR for a given image file path using the specified OCR arguments.
 // It returns the raw OCR result as bytes and any error encountered.
-func OcrFile(exePath, imagePath string, argsCnf OcrArgs) ([]byte, error) {
-	p, err := NewPpocr(exePath, argsCnf)
+func OcrFile(exePath, imagePath string, argsCnf OcrArgs, argsCustom ...string) ([]byte, error) {
+	p, err := NewPpocr(exePath, argsCnf, argsCustom...)
 	if err != nil {
 		return nil, err
 	}
@@ -96,8 +105,8 @@ func OcrFile(exePath, imagePath string, argsCnf OcrArgs) ([]byte, error) {
 	return b, nil
 }
 
-func OcrFileAndParse(exePath, imagePath string, argsCnf OcrArgs) (Result, error) {
-	data, err := OcrFile(exePath, imagePath, argsCnf)
+func OcrFileAndParse(exePath, imagePath string, argsCnf OcrArgs, argsCustom ...string) (Result, error) {
+	data, err := OcrFile(exePath, imagePath, argsCnf, argsCustom...)
 	if err != nil {
 		return Result{}, err
 	}
@@ -107,6 +116,7 @@ func OcrFileAndParse(exePath, imagePath string, argsCnf OcrArgs) (Result, error)
 type Ppocr struct {
 	exePath         string
 	args            OcrArgs
+	argsCustom      []string
 	ppLock          *sync.Mutex
 	restartExitChan chan struct{}
 	internalErr     error
@@ -126,13 +136,20 @@ type Ppocr struct {
 // and any error encountered.
 //
 // It is the caller's responsibility to close the Ppocr instance when finished.
-func NewPpocr(exePath string, args OcrArgs) (*Ppocr, error) {
+//
+// The argsCustom is a list of custom arguments to be passed to the OCR process.
+//
+// example:
+//
+//	paddleocr.NewPpocr(exePath, args, "-limit_type=max", "-cls=1")
+func NewPpocr(exePath string, args OcrArgs, argsCustom ...string) (*Ppocr, error) {
 	if !fileIsExist(exePath) {
 		return nil, fmt.Errorf("executable file %s not found", exePath)
 	}
 	p := &Ppocr{
 		exePath:                exePath,
 		args:                   args,
+		argsCustom:             argsCustom,
 		ppLock:                 new(sync.Mutex),
 		restartExitChan:        make(chan struct{}),
 		runGoroutineExitedChan: make(chan struct{}),
@@ -157,7 +174,8 @@ func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
 	} else {
 		cmdSlash = "/"
 	}
-	p.cmd = exec.Command("."+cmdSlash+filepath.Base(exePath), strings.Fields(args.CmdString())...)
+	argsCmd := append(strings.Fields(args.CmdString()), p.argsCustom...)
+	p.cmd = exec.Command("."+cmdSlash+filepath.Base(exePath), argsCmd...)
 	cmdDir := filepath.Dir(exePath)
 	if cmdDir == "." {
 		cmdDir = ""
