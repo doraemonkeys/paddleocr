@@ -17,22 +17,22 @@ import (
 
 type OcrArgs struct {
 	// 启用cls方向分类，识别方向不是正朝上的图片。默认为false。
-	Cls *bool `paddleocr:"cls"`
+	Cls *bool `paddleocr:"--cls"`
 	// 启用CPU推理加速，关掉可以减少内存占用，但会降低速度。默认为true。
-	EnableMkldnn *bool `paddleocr:"enable_mkldnn"`
+	EnableMkldnn *bool `paddleocr:"--enable_mkldnn"`
 	// 若图片长边长度大于该值，会被缩小到该值，以提高速度。默认为960。
 	// 如果对大图/长图的识别率低，可增大 limit_side_len 的值。
 	// 建议为 32 & 48 的公倍数，如 960, 2880, 4320
-	LimitSideLen *int32 `paddleocr:"limit_side_len"`
+	LimitSideLen *int32 `paddleocr:"--limit_side_len"`
 	// 启用方向分类，必须与cls值相同。 默认为false。
-	UseAngleCls *bool `paddleocr:"use_angle_cls"`
+	UseAngleCls *bool `paddleocr:"--use_angle_cls"`
 	// 指定不同语言的配置文件路径，识别多国语言。
 	// models 目录中，每一个 config_xxx.txt 是一组语言配置文件（如英文是congfig_en.txt）。
 	// 只需将这个文件的路径传入 config_path 参数，即可切换为对应的语言。
 	//
 	// 例如：
 	//   paddleocr.OcrArgs{ ConfigPath: paddleocr.ConfigChinese }
-	ConfigPath string `paddleocr:"config_path"`
+	ConfigPath string `paddleocr:"--config_path"`
 }
 
 const (
