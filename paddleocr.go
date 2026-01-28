@@ -273,6 +273,9 @@ func (p *Ppocr) close() (err error) {
 	if err := p.cmdStdin.Close(); err != nil {
 		fmt.Fprintf(os.Stderr, "close cmdIn error: %v\n", err)
 	}
+	if err := p.cmdStdout.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "close cmdOut error: %v\n", err)
+	}
 	if err := p.cmd.Process.Kill(); err != nil {
 		return err
 	}
