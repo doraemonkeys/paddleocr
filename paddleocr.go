@@ -370,7 +370,7 @@ func (p *Ppocr) ocr(dataJson []byte) ([]byte, error) {
 		if start >= len(content) {
 			content = append(content, make([]byte, 1024*10)...)
 		}
-		if content[start-1] == '\n' {
+		if start > 0 && content[start-1] == '\n' {
 			break
 		}
 	}
@@ -380,9 +380,6 @@ func (p *Ppocr) ocr(dataJson []byte) ([]byte, error) {
 // Ocr processes the OCR for a given image represented as a byte slice.
 // It returns the OCR result as bytes and any error encountered.
 func (p *Ppocr) Ocr(image []byte) ([]byte, error) {
-	if internalErr := p.getInternalErr(); internalErr != nil {
-		return nil, internalErr
-	}
 	var data = imageData{ContentB64: image}
 	dataJson, err := json.Marshal(data) //auto base64
 	if err != nil {
@@ -391,6 +388,9 @@ func (p *Ppocr) Ocr(image []byte) ([]byte, error) {
 
 	p.ppLock.Lock()
 	defer p.ppLock.Unlock()
+	if internalErr := p.getInternalErr(); internalErr != nil {
+		return nil, internalErr
+	}
 	return p.ocr(dataJson)
 }
 
@@ -426,8 +426,12 @@ func ParseResult(rawData []byte) (Result, error) {
 	if resp["code"] == nil {
 		return Result{}, fmt.Errorf("no code in response")
 	}
-	if resp["code"].(float64) != 100 {
-		result.Code = int(resp["code"].(float64))
+	code, ok := resp["code"].(float64)
+	if !ok {
+		return Result{}, fmt.Errorf("code is not a number")
+	}
+	if code != 100 {
+		result.Code = int(code)
 		result.Msg = fmt.Sprintf("%v", resp["data"])
 		return result, nil
 	}
