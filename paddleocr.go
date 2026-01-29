@@ -256,31 +256,43 @@ func (p *Ppocr) close() (err error) {
 		return nil
 	default:
 	}
-	defer func() {
-		// 可能的情况：Run刚退出，p.exited还没设置为true
-		if r := recover(); r != nil {
-			err = fmt.Errorf("close panic: %v", r)
-		}
-		// fmt.Println("wait OCR runGoroutineExitedChan")
-		<-p.runGoroutineExitedChan
-		// fmt.Println("wait OCR runGoroutineExitedChan done")
-	}()
+
 	if p.cmd == nil {
 		return nil
 	}
+
+	// Process 只有在 Start() 成功后才非 nil
+	// Start() 成功 → goroutine 已启动 → 需要等待 channel
+	processStarted := p.cmd.Process != nil
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("close panic: %v", r)
+		}
+		if processStarted {
+			<-p.runGoroutineExitedChan
+		}
+	}()
+
 	if p.cmd.ProcessState != nil && p.cmd.ProcessState.Exited() {
 		return nil
 	}
-	if err := p.cmdStdin.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "close cmdIn error: %v\n", err)
+
+	if p.cmdStdin != nil {
+		if err := p.cmdStdin.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "close cmdIn error: %v\n", err)
+		}
 	}
-	if err := p.cmdStdout.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "close cmdOut error: %v\n", err)
+	if p.cmdStdout != nil {
+		if err := p.cmdStdout.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "close cmdOut error: %v\n", err)
+		}
 	}
-	if err := p.cmd.Process.Kill(); err != nil {
-		return err
+	if p.cmd.Process != nil {
+		if err := p.cmd.Process.Kill(); err != nil {
+			return err
+		}
 	}
-	// fmt.Println("kill OCR process success")
 	return nil
 }
 
