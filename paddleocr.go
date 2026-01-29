@@ -200,8 +200,9 @@ func (p *Ppocr) initPpocr(exePath string, args OcrArgs) error {
 		return fmt.Errorf("OCR process start failed: %v", err)
 	}
 
+	// Set the internalErr to nil before the go func() to avoid race condition
+	p.internalErr = nil
 	go func() {
-		p.internalErr = nil
 		err := p.cmd.Wait()
 		// fmt.Println("Run() OCR process exited, error:", err)
 		if err != nil {
